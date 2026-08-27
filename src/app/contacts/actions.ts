@@ -1,5 +1,6 @@
 "use server";
 
+import { Buffer } from "node:buffer";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ApiError, ApiUnreachableError } from "@/lib/apiClient";
@@ -15,6 +16,7 @@ import {
   formDataToValues,
   zodFieldErrors,
 } from "@/lib/contacts/schema";
+import { photoFileError } from "@/lib/contacts/photo";
 import type { Contact, FormState } from "@/lib/contacts/types";
 
 /** Mutations for the contacts UI. Every one of these runs only on the server. */
@@ -30,17 +32,48 @@ const UNREACHABLE =
 /**
  * Create (when `contactId` is null) or fully replace a contact.
  *
- * Bind the id at the call site — `saveContactAction.bind(null, contact.id)` —
- * so the form itself never carries a mutable record id.
+ * Bind the id and trusted existing photo at the call site so the form never
+ * carries a mutable record id or has to post the original data URL back.
  */
 export async function saveContactAction(
   contactId: number | null,
+  existingPhoto: string | null,
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
   const values = formDataToValues(formData);
+  const photoEntry = formData.get("photo_file");
+  const photoFile = typeof photoEntry === "string" ? null : photoEntry;
+  const hasPhotoFile =
+    photoFile !== null && (photoFile.name !== "" || photoFile.size > 0);
 
-  const parsed = contactInputSchema.safeParse(values);
+  let photo: string | null;
+  if (hasPhotoFile) {
+    const error = photoFileError(photoFile);
+    if (error) {
+      return {
+        status: "error",
+        message: "Please fix the highlighted fields.",
+        fieldErrors: { photo: error },
+        values,
+      };
+    }
+    const bytes = Buffer.from(await photoFile.arrayBuffer());
+    photo = `data:${photoFile.type};base64,${bytes.toString("base64")}`;
+  } else {
+    const intent = formData.get("photo_intent");
+    if (intent === "replace") {
+      return {
+        status: "error",
+        message: "Please fix the highlighted fields.",
+        fieldErrors: { photo: "Choose a photo to upload." },
+        values,
+      };
+    }
+    photo = intent === "remove" ? null : existingPhoto;
+  }
+
+  const parsed = contactInputSchema.safeParse({ ...values, photo });
   if (!parsed.success) {
     return {
       status: "error",

@@ -45,7 +45,7 @@ export default async function EditContactPage({ params }: PageProps) {
       </div>
 
       <ContactForm
-        action={saveContactAction.bind(null, contact.id)}
+        action={saveContactAction.bind(null, contact.id, contact.photo)}
         contact={contact}
         submitLabel="Save changes"
         cancelHref={`/contacts/${contact.id}`}

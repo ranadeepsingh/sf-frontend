@@ -1,16 +1,17 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState, type FormEvent } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { AlertCircle, Loader2 } from "lucide-react";
 import Field from "@/components/ui/Field";
 import Button, { buttonClasses } from "@/components/ui/Button";
+import ContactPhotoField from "./ContactPhotoField";
 import { CONTACT_FIELD_GROUPS } from "@/lib/contacts/schema";
 import {
   EMPTY_FORM_STATE,
   type Contact,
-  type ContactInput,
+  type ContactTextField,
   type FormState,
 } from "@/lib/contacts/types";
 
@@ -49,13 +50,23 @@ export default function ContactForm({
   cancelHref: string;
 }) {
   const [state, formAction] = useActionState(action, EMPTY_FORM_STATE);
+  const [photoError, setPhotoError] = useState<string | null>(null);
 
-  function valueFor(name: keyof ContactInput): string {
+  function valueFor(name: ContactTextField): string {
     return state.values?.[name] ?? contact?.[name] ?? "";
   }
 
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    if (photoError) event.preventDefault();
+  }
+
   return (
-    <form action={formAction} noValidate className="space-y-8">
+    <form
+      action={formAction}
+      onSubmit={handleSubmit}
+      noValidate
+      className="space-y-8"
+    >
       {state.status === "error" && state.message ? (
         <div
           role="alert"
@@ -69,6 +80,12 @@ export default function ContactForm({
           <span>{state.message}</span>
         </div>
       ) : null}
+
+      <ContactPhotoField
+        contact={contact}
+        serverError={state.fieldErrors?.photo}
+        onClientErrorChange={setPhotoError}
+      />
 
       {CONTACT_FIELD_GROUPS.map((group) => (
         <fieldset key={group.title} className="space-y-4">
