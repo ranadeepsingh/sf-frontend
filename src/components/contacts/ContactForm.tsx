@@ -1,11 +1,12 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState, type FormEvent } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { AlertCircle, Loader2 } from "lucide-react";
 import Field from "@/components/ui/Field";
 import Button, { buttonClasses } from "@/components/ui/Button";
+import ContactPhotoField from "./ContactPhotoField";
 import { CONTACT_FIELD_GROUPS } from "@/lib/contacts/schema";
 import {
   EMPTY_FORM_STATE,
@@ -49,13 +50,31 @@ export default function ContactForm({
   cancelHref: string;
 }) {
   const [state, formAction] = useActionState(action, EMPTY_FORM_STATE);
+  const [photoError, setPhotoError] = useState<string | null>(null);
 
   function valueFor(name: keyof ContactInput): string {
     return state.values?.[name] ?? contact?.[name] ?? "";
   }
 
+  /**
+   * The photo control is the only field validated in the browser, so nothing
+   * else stops a submit that would just bounce. Refuse it here and move focus
+   * to the offending input, whose `aria-describedby` carries the reason.
+   */
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    if (!photoError) return;
+    event.preventDefault();
+    const photoInput = event.currentTarget.elements.namedItem("photo_file");
+    if (photoInput instanceof HTMLElement) photoInput.focus();
+  }
+
   return (
-    <form action={formAction} noValidate className="space-y-8">
+    <form
+      action={formAction}
+      onSubmit={handleSubmit}
+      noValidate
+      className="space-y-8"
+    >
       {state.status === "error" && state.message ? (
         <div
           role="alert"
@@ -69,6 +88,13 @@ export default function ContactForm({
           <span>{state.message}</span>
         </div>
       ) : null}
+
+      <ContactPhotoField
+        contact={contact}
+        serverError={state.photoError}
+        submitResult={state}
+        onErrorChange={setPhotoError}
+      />
 
       {CONTACT_FIELD_GROUPS.map((group) => (
         <fieldset key={group.title} className="space-y-4">

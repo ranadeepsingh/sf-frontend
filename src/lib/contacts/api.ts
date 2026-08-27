@@ -93,6 +93,73 @@ export async function deleteContact(id: number): Promise<void> {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Photos — a sub-resource, not a contact field                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The photo endpoint, derived from the contacts path so it stays consistent with
+ * the rest of the API surface. Override the last segment with
+ * `CONTACT_PHOTO_SEGMENT`, and the multipart part name with
+ * `CONTACT_PHOTO_FIELD`, if the API ever names them differently.
+ *
+ * Contract (see AGENTS.md):
+ *   PUT    /api/v1/contacts/{id}/photo   multipart/form-data, part `file`
+ *                                        -> 200 ContactRead (with `photo_url`)
+ *   GET    /api/v1/contacts/{id}/photo   -> image bytes
+ *   DELETE /api/v1/contacts/{id}/photo   -> 200/204, idempotent
+ */
+const PHOTO_SEGMENT = process.env.CONTACT_PHOTO_SEGMENT || "photo";
+export const PHOTO_FIELD_NAME = process.env.CONTACT_PHOTO_FIELD || "file";
+
+/** Uploads move real bytes; the read timeout is far too tight for them. */
+export const PHOTO_UPLOAD_TIMEOUT_MS = Number(
+  process.env.PHOTO_UPLOAD_TIMEOUT_MS ?? 30_000,
+);
+
+export function contactPhotoPath(id: number): string {
+  return `${CONTACTS_PATH}/${id}/${PHOTO_SEGMENT}`;
+}
+
+/**
+ * Create or replace a contact's photo.
+ *
+ * The `File` is streamed straight through as multipart — it is never read into a
+ * string, base64-encoded, or copied into the contact JSON document.
+ */
+export async function uploadContactPhoto(
+  id: number,
+  file: File,
+): Promise<Contact> {
+  const body = new FormData();
+  body.append(PHOTO_FIELD_NAME, file, file.name || "photo");
+
+  return apiJson<Contact>(contactPhotoPath(id), {
+    method: "PUT",
+    body,
+    signal: AbortSignal.timeout(PHOTO_UPLOAD_TIMEOUT_MS),
+  });
+}
+
+/** Remove a contact's photo. Idempotent: a contact without one is not an error. */
+export async function deleteContactPhoto(id: number): Promise<void> {
+  const res = await apiFetch(contactPhotoPath(id), { method: "DELETE" });
+  if (!res.ok && res.status !== 404) {
+    throw new ApiError(res.status, await res.text().catch(() => ""));
+  }
+}
+
+/**
+ * Fetch the raw photo bytes for the same-origin proxy route. Returns the
+ * upstream `Response` untouched so the route can stream it to the browser.
+ */
+export async function fetchContactPhoto(id: number): Promise<Response> {
+  return apiFetch(contactPhotoPath(id), {
+    cache: "no-store",
+    headers: { Accept: "image/*" },
+  });
+}
+
 export async function getHealth(): Promise<HealthResponse | null> {
   try {
     // The badge is decoration; never let it hold the page open for long.

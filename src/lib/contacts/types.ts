@@ -18,15 +18,30 @@ export interface Contact {
   postal_code: string | null;
   country: string | null;
   notes: string | null;
+  /**
+   * Where the contact's photo can be read, or `null`/absent when there is none.
+   *
+   * Read-only and set by the API: a photo is a separate resource
+   * (`PUT`/`DELETE /api/v1/contacts/{id}/photo`), never part of the contact JSON
+   * document. Optional on the wire so the UI falls back to initials against an
+   * API build that predates the photo endpoint.
+   */
+  photo_url?: string | null;
   created_at: string;
   updated_at: string;
   full_name: string;
 }
 
-/** Every editable field, i.e. `ContactCreate` / `ContactReplace`. */
+/**
+ * Every editable field, i.e. `ContactCreate` / `ContactReplace`.
+ *
+ * `photo_url` is excluded deliberately. The API's contact models forbid extra
+ * inputs, so putting any image key in this payload makes *every* save fail with
+ * `422 extra_forbidden` — photo or no photo.
+ */
 export type ContactInput = Omit<
   Contact,
-  "id" | "created_at" | "updated_at" | "full_name"
+  "id" | "created_at" | "updated_at" | "full_name" | "photo_url"
 >;
 
 /** `ContactPage` — one page of contacts plus the totals needed to paginate. */
@@ -75,6 +90,11 @@ export type FormState = {
   message?: string;
   /** Per-field messages keyed by input name. */
   fieldErrors?: Partial<Record<keyof ContactInput, string>>;
+  /**
+   * Message for the photo control. Separate from `fieldErrors` because the photo
+   * is not a contact field — it is its own resource with its own request.
+   */
+  photoError?: string;
   /** Echo of the submitted values so the form survives a failed round trip. */
   values?: Partial<Record<keyof ContactInput, string>>;
 };
