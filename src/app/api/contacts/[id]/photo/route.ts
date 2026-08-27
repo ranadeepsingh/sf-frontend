@@ -1,4 +1,4 @@
-import { ApiError, ApiUnreachableError } from "@/lib/apiClient";
+import { ApiUnreachableError } from "@/lib/apiClient";
 import { fetchContactPhoto } from "@/lib/contacts/api";
 
 /**
@@ -24,14 +24,17 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
-  const id = Number.parseInt((await params).id, 10);
-  if (!Number.isInteger(id) || id < 1) return NOT_FOUND.clone();
+  const raw = (await params).id;
+  // Strict: `parseInt` would happily turn "1.5" or "1abc" into contact 1.
+  if (!/^[1-9][0-9]*$/.test(raw)) return NOT_FOUND.clone();
+  const id = Number(raw);
+  if (!Number.isSafeInteger(id)) return NOT_FOUND.clone();
 
   let upstream: Response;
   try {
     upstream = await fetchContactPhoto(id);
   } catch (error) {
-    if (error instanceof ApiUnreachableError || error instanceof ApiError) {
+    if (error instanceof ApiUnreachableError) {
       return new Response("Photo unavailable", {
         status: 502,
         headers: { "Cache-Control": "no-store" },
@@ -40,7 +43,13 @@ export async function GET(
     throw error;
   }
 
-  if (!upstream.ok || !upstream.body) return NOT_FOUND.clone();
+  if (upstream.status === 404) return NOT_FOUND.clone();
+  if (!upstream.ok || !upstream.body) {
+    return new Response("Photo unavailable", {
+      status: 502,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
 
   const contentType = upstream.headers.get("Content-Type") ?? "";
   // Never let the API talk this origin into serving HTML or a script from an
