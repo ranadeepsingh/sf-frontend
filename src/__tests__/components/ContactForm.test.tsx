@@ -1,9 +1,8 @@
 import React from "react";
-import { Buffer } from "node:buffer";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ContactForm from "@/components/contacts/ContactForm";
-import { makeContact, TEST_PNG_DATA_URL } from "../mocks/handlers";
+import { makeContact } from "../mocks/handlers";
 import type { FormState } from "@/lib/contacts/types";
 
 function renderForm(action: jest.Mock, contact?: ReturnType<typeof makeContact>) {
@@ -26,113 +25,15 @@ describe("ContactForm", () => {
     expect(screen.getByLabelText(/^email/i)).toBeRequired();
     expect(screen.getByLabelText(/phone/i)).not.toBeRequired();
     expect(screen.getByLabelText(/notes/i).tagName).toBe("TEXTAREA");
-    expect(screen.getByLabelText(/contact photo/i)).toHaveAttribute(
-      "accept",
-      "image/jpeg,image/png,image/webp",
-    );
-    expect(screen.getByText(/maximum 2 MiB/i)).toBeInTheDocument();
   });
 
   it("prefills from an existing contact", () => {
-    const photo = TEST_PNG_DATA_URL;
-    const { container } = renderForm(jest.fn(), makeContact({ photo }));
+    renderForm(jest.fn(), makeContact());
 
     expect(screen.getByLabelText(/first name/i)).toHaveValue("Ada");
     expect(screen.getByLabelText(/^email/i)).toHaveValue("ada@example.com");
     // Nulls become empty inputs rather than the string "null".
     expect(screen.getByLabelText(/street address/i)).toHaveValue("");
-    expect(container.querySelector("img")).toHaveAttribute("src", photo);
-    expect(screen.getByRole("button", { name: /remove photo/i })).toBeVisible();
-  });
-
-  it("validates photo type before submission", async () => {
-    const action = jest.fn(async (): Promise<FormState> => ({ status: "idle" }));
-    renderForm(action);
-    const user = userEvent.setup({ applyAccept: false });
-    const file = new File(["not an image"], "avatar.svg", {
-      type: "image/svg+xml",
-    });
-
-    await user.upload(screen.getByLabelText(/contact photo/i), file);
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Choose a JPEG, PNG, or WebP image.",
-    );
-
-    await user.click(screen.getByRole("button", { name: /create contact/i }));
-    expect(action).not.toHaveBeenCalled();
-    // The refusal is otherwise silent, so the invalid control takes focus.
-    expect(screen.getByLabelText(/contact photo/i)).toHaveFocus();
-  });
-
-  it("validates photo size before submission", async () => {
-    renderForm(jest.fn());
-    const file = new File([new Uint8Array(2 * 1024 * 1024 + 1)], "large.png", {
-      type: "image/png",
-    });
-
-    await userEvent.upload(screen.getByLabelText(/contact photo/i), file);
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Photo must be 2 MiB or smaller.",
-    );
-  });
-
-  it("previews a valid upload as a data URL without object URLs", async () => {
-    const { container } = renderForm(jest.fn());
-    const payload = TEST_PNG_DATA_URL.split(",")[1];
-    const file = new File([Buffer.from(payload, "base64")], "avatar.png", {
-      type: "image/png",
-    });
-
-    await userEvent.upload(screen.getByLabelText(/contact photo/i), file);
-
-    await waitFor(() =>
-      expect(container.querySelector("img")?.getAttribute("src")).toMatch(
-        /^data:image\/png;base64,/,
-      ),
-    );
-  });
-
-  it("preserves an untouched photo and explicitly marks removal", async () => {
-    const action = jest.fn<Promise<FormState>, [FormState, FormData]>(
-      async () => ({ status: "idle" }),
-    );
-    const contact = makeContact({ photo: TEST_PNG_DATA_URL });
-    const { unmount } = renderForm(action, contact);
-
-    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
-    await waitFor(() => expect(action).toHaveBeenCalled());
-    expect(action.mock.calls[0][1].get("photo_intent")).toBe("preserve");
-
-    unmount();
-    action.mockClear();
-    renderForm(action, contact);
-    await userEvent.click(screen.getByRole("button", { name: /remove photo/i }));
-    expect(screen.queryByRole("button", { name: /remove photo/i })).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
-    await waitFor(() => expect(action).toHaveBeenCalled());
-    expect(action.mock.calls[0][1].get("photo_intent")).toBe("remove");
-  });
-
-  it("shows a typed photo error returned by the API", async () => {
-    const action = jest.fn(
-      async (): Promise<FormState> => ({
-        status: "error",
-        message: "The API rejected these values.",
-        fieldErrors: { photo: "Photo content is invalid." },
-      }),
-    );
-    renderForm(action);
-
-    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
-
-    expect(await screen.findByText("Photo content is invalid.")).toHaveAttribute(
-      "role",
-      "alert",
-    );
-    expect(screen.getByLabelText(/contact photo/i)).toHaveAttribute(
-      "aria-invalid",
-      "true",
-    );
   });
 
   it("submits the entered values to the action", async () => {
@@ -185,50 +86,5 @@ describe("ContactForm", () => {
       "href",
       "/contacts",
     );
-  });
-
-  it("stops claiming a replacement the failed submit threw away", async () => {
-    const action = jest.fn<Promise<FormState>, [FormState, FormData]>(
-      async () => ({
-        status: "error",
-        message: "That email address is already taken.",
-        fieldErrors: { email: "This email is already in use." },
-      }),
-    );
-    const contact = makeContact({ photo: TEST_PNG_DATA_URL });
-    const { container } = renderForm(action, contact);
-    const input = screen.getByLabelText<HTMLInputElement>(/contact photo/i);
-    const payload = TEST_PNG_DATA_URL.split(",")[1];
-
-    await userEvent.upload(
-      input,
-      new File([Buffer.from(payload, "base64")], "avatar.png", {
-        type: "image/png",
-      }),
-    );
-    await screen.findByText("Ready: avatar.png");
-
-    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
-    await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
-    expect(action.mock.calls[0][1].get("photo_intent")).toBe("replace");
-    await screen.findByText("This email is already in use.");
-
-    // React cleared the input on the way back, so the field must stop promising
-    // a file it can no longer send.
-    expect(input.files).toHaveLength(0);
-    expect(screen.queryByText(/^Ready:/)).toBeNull();
-    expect(screen.getByText(/choose it again/i)).toBeInTheDocument();
-    expect(container.querySelector("img")).toHaveAttribute(
-      "src",
-      TEST_PNG_DATA_URL,
-    );
-
-    // The retry keeps the saved photo instead of asking for a file that is gone.
-    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
-    await waitFor(() => expect(action).toHaveBeenCalledTimes(2));
-    const retry = action.mock.calls[1][1];
-    expect(retry.get("photo_intent")).toBe("preserve");
-    const retryFile = retry.get("photo_file");
-    expect(retryFile instanceof File ? retryFile.size : 0).toBe(0);
   });
 });

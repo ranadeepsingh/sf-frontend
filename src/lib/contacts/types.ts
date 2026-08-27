@@ -18,8 +18,6 @@ export interface Contact {
   postal_code: string | null;
   country: string | null;
   notes: string | null;
-  /** JPEG, PNG, or WebP data URL stored inline by the demo API. */
-  photo: string | null;
   created_at: string;
   updated_at: string;
   full_name: string;
@@ -30,9 +28,6 @@ export type ContactInput = Omit<
   Contact,
   "id" | "created_at" | "updated_at" | "full_name"
 >;
-
-/** Text controls rendered by the generic form field component. */
-export type ContactTextField = Exclude<keyof ContactInput, "photo">;
 
 /** `ContactPage` — one page of contacts plus the totals needed to paginate. */
 export interface ContactPage {
@@ -81,7 +76,7 @@ export type FormState = {
   /** Per-field messages keyed by input name. */
   fieldErrors?: Partial<Record<keyof ContactInput, string>>;
   /** Echo of the submitted values so the form survives a failed round trip. */
-  values?: Partial<Record<ContactTextField, string>>;
+  values?: Partial<Record<keyof ContactInput, string>>;
 };
 
 export const EMPTY_FORM_STATE: FormState = { status: "idle" };
