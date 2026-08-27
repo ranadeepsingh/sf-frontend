@@ -1,7 +1,7 @@
 # sf-frontend
 
 Front end for the [Contacts API](http://127.0.0.1:8000/docs) — browse, search, sort,
-page through, create, edit, and delete contacts.
+page through, create, edit, and delete contacts, including profile photos.
 
 Next.js 16 (App Router) · TypeScript · Tailwind CSS · Zod · Jest + Testing Library
 + MSW · Playwright.
@@ -42,8 +42,8 @@ The landing route (`/` redirects here). What to check, top to bottom:
   selector. Both write to the URL, so the state survives a reload and is
   shareable.
 - **Table** — sortable `Name` and `Email` headers (the arrow shows the active
-  column and direction), an initials avatar per row, `Job title at Company` as
-  the subtitle, and per-row pencil (edit) and trash (delete) actions.
+  column and direction), a circular photo or deterministic initials fallback per
+  row, `Job title at Company` as the subtitle, and per-row edit/delete actions.
 - **Footer row** — `Showing 1–3 of 3` with Previous/Next, both disabled on a
   single page.
 - **Version stamp** — `web v0.1.0 (build 2 · 8ce2dc0)` at the bottom of every
@@ -60,7 +60,8 @@ just means an empty database, not a broken app.
 Click a row to get here. It confirms the detail read path works end to end:
 
 - **`< All contacts`** back link to the list.
-- **Header** — avatar, name, and `Job title at Company`, with **Edit**
+- **Header** — circular photo (or initials fallback), name, and
+  `Job title at Company`, with **Edit**
   (`/contacts/[id]/edit`) and a destructive **Delete** that asks before it acts.
 - **Field table** — email and phone rendered as `mailto:` / `tel:` links, then
   company, job title, address, and notes. Empty optional fields show `—` rather
@@ -129,12 +130,34 @@ e2e/                      Playwright specs (run against the real API)
   sanitised by `src/lib/contacts/query.ts`. Sorting is validated against the
   API's allow-list, so a hand-edited URL can never produce a 422.
 
+## Contact photos
+
+- The create and edit forms accept JPEG, PNG, and WebP images up to 2 MiB and
+  show an immediate circular preview. Unsupported, empty, mislabeled, and
+  oversized files are rejected before the API call.
+- Photos are encoded as data URLs by the server action and stored in the API's
+  in-memory database. The edit action explicitly carries an unchanged photo
+  through the full-replacement `PUT`. It reads the stored photo back by id
+  rather than binding it to the action, so the data URL is never echoed into the
+  page or posted again. **Remove photo** intentionally sends `null`.
+- `ContactAvatar` renders photos in the list, detail page, and form preview. A
+  missing or unreadable image falls back to initials.
+- A submit carries at most one photo as multipart binary. The Server Action
+  limit allows a 2 MiB file plus 512 KiB for text fields and multipart
+  boundaries. The browser and server reject larger image files.
+- A rejected file leaves the saved photo untouched and can be dropped with
+  **Discard selection**. A blocked submit moves focus to the photo input so the
+  reason is announced. React empties the file input when an action returns. If
+  the submit fails, the preview resets and asks the user to choose the file
+  again.
+
 ## Conventions
 
 - **Forms** — one source of truth: `CONTACT_FIELD_GROUPS` in
   `src/lib/contacts/schema.ts` drives both the rendered fields and the Zod rules,
   which mirror the API's own limits. Submitting is a real form `action`, so it
-  works before hydration; `useActionState` surfaces what comes back.
+  works before hydration; `useActionState` surfaces what comes back. Photo
+  validation is shared by the browser preview and the server action.
 - **Styling** — Tailwind against semantic CSS variables (`bg-background`,
   `text-muted-foreground`, `border-hairline`, …) defined in `src/app/globals.css`.
   Dark is the default; light lives under `[data-theme="light"]`. Add colours as

@@ -1,6 +1,10 @@
 import { http, HttpResponse } from "msw";
 import { server } from "../../mocks/server";
-import { api } from "../../mocks/handlers";
+import {
+  api,
+  makeContact,
+  TEST_PNG_DATA_URL,
+} from "../../mocks/handlers";
 import { ApiError } from "@/lib/apiClient";
 import {
   apiErrorMessage,
@@ -9,6 +13,7 @@ import {
   getContact,
   getHealth,
   listContacts,
+  replaceContact,
   toFieldErrors,
 } from "@/lib/contacts/api";
 import type { ContactInput } from "@/lib/contacts/types";
@@ -30,6 +35,7 @@ const INPUT: ContactInput = {
   postal_code: null,
   country: null,
   notes: null,
+  photo: null,
 };
 
 describe("listContacts", () => {
@@ -89,6 +95,23 @@ describe("getContact", () => {
 describe("createContact", () => {
   it("posts the input and returns the stored contact", async () => {
     await expect(createContact(INPUT)).resolves.toMatchObject({ id: 99 });
+  });
+
+  describe("replaceContact", () => {
+    it("puts the complete input including an explicit photo value", async () => {
+      let body: unknown;
+      server.use(
+        http.put(api("/api/v1/contacts/:id"), async ({ request }) => {
+          body = await request.json();
+          return HttpResponse.json(makeContact());
+        }),
+      );
+
+      const photo = TEST_PNG_DATA_URL;
+      await replaceContact(1, { ...INPUT, photo });
+
+      expect(body).toEqual({ ...INPUT, photo });
+    });
   });
 
   it("surfaces a 409 as an ApiError", async () => {
@@ -151,6 +174,7 @@ describe("error translation", () => {
         detail: [
           { loc: ["body", "email"], msg: "value is not a valid email address" },
           { loc: ["body", "first_name"], msg: "String should have at least 1 character" },
+          { loc: ["body", "photo"], msg: "Photo must be 2 MiB or smaller" },
         ],
       }),
     );
@@ -158,6 +182,7 @@ describe("error translation", () => {
     expect(toFieldErrors(error)).toEqual({
       email: "value is not a valid email address",
       first_name: "String should have at least 1 character",
+      photo: "Photo must be 2 MiB or smaller",
     });
   });
 

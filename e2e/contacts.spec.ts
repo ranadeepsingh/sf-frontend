@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { Buffer } from 'node:buffer'
 
 /**
  * These run against the real Contacts API, so every test invents its own
@@ -8,6 +9,11 @@ import { test, expect, type Page } from '@playwright/test'
 function uniqueEmail(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`
 }
+
+const ONE_PIXEL_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64',
+)
 
 async function createContact(
   page: Page,
@@ -75,6 +81,47 @@ test.describe('Contacts', () => {
     // And it is gone.
     await page.goto(`/contacts?q=${last}`)
     await expect(page.getByRole('heading', { name: 'No matching contacts' })).toBeVisible()
+  })
+
+  test('uploads, preserves, lists and removes a contact photo', async ({ page }) => {
+    const email = uniqueEmail('photo')
+    const last = `Photo${Date.now().toString().slice(-6)}`
+    const fullName = `Portrait ${last}`
+
+    await page.goto('/contacts/new')
+    await page.getByLabel('Contact photo').setInputFiles({
+      name: 'avatar.png',
+      mimeType: 'image/png',
+      buffer: ONE_PIXEL_PNG,
+    })
+    await expect(page.getByText('Ready: avatar.png')).toBeVisible()
+    await page.getByLabel('First name').fill('Portrait')
+    await page.getByLabel('Last name').fill(last)
+    await page.getByLabel('Email', { exact: false }).first().fill(email)
+    await page.getByRole('button', { name: 'Create contact' }).click()
+
+    await expect(page.getByRole('heading', { level: 1, name: fullName })).toBeVisible()
+    await expect(page.locator('.contact-avatar img')).toBeVisible()
+
+    // A full PUT edit must carry the original photo even when no new file is chosen.
+    await page.getByRole('link', { name: 'Edit' }).click()
+    await page.getByLabel('Job title').fill('Photo Engineer')
+    await page.getByRole('button', { name: 'Save changes' }).click()
+    await expect(page.getByText('Photo Engineer')).toBeVisible()
+    await expect(page.locator('.contact-avatar img')).toBeVisible()
+
+    await page.getByRole('link', { name: 'All contacts' }).click()
+    const row = page.getByRole('row').filter({ hasText: fullName })
+    await expect(row.locator('.contact-avatar img')).toBeVisible()
+
+    await row.getByRole('link', { name: fullName }).click()
+    await page.getByRole('link', { name: 'Edit' }).click()
+    await page.getByRole('button', { name: 'Remove photo' }).click()
+    await page.getByRole('button', { name: 'Save changes' }).click()
+    await expect(page.locator('.contact-avatar img')).toHaveCount(0)
+    await expect(page.locator('.contact-avatar')).toContainText('PP')
+
+    await deleteFromDetailPage(page, fullName)
   })
 
   test('rejects a duplicate email with a field-level error', async ({ page }) => {

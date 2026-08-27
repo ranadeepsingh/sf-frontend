@@ -2,6 +2,9 @@ import { http, HttpResponse } from "msw";
 import { apiBaseUrl } from "@/lib/apiClient";
 import type { Contact, ContactPage } from "@/lib/contacts/types";
 
+export const TEST_PNG_DATA_URL =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
 /** Prefix a path with the configured API base so handlers match apiClient URLs. */
 export function api(path: string): string {
   return `${apiBaseUrl}${path}`;
@@ -25,6 +28,7 @@ export function makeContact(overrides: Partial<Contact> = {}): Contact {
     postal_code: null,
     country: "USA",
     notes: null,
+    photo: null,
     created_at: "2026-08-19T17:04:53.743932Z",
     updated_at: "2026-08-19T17:04:53.743936Z",
     full_name: `${first_name} ${last_name}`,

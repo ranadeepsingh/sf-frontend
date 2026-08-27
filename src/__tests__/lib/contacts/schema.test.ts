@@ -4,6 +4,7 @@ import {
   formDataToValues,
   zodFieldErrors,
 } from "@/lib/contacts/schema";
+import { TEST_PNG_DATA_URL } from "../../mocks/handlers";
 
 function values(overrides: Record<string, string> = {}) {
   return {
@@ -19,6 +20,7 @@ function values(overrides: Record<string, string> = {}) {
     postal_code: "",
     country: "",
     notes: "",
+    photo: null,
     ...overrides,
   };
 }
@@ -65,6 +67,31 @@ describe("contactInputSchema", () => {
       first_name: "First name must be 100 characters or fewer",
       postal_code: "Postal code must be 20 characters or fewer",
     });
+  });
+
+  it("accepts a supported photo data URL and rejects other image formats", () => {
+    expect(
+      contactInputSchema.parse(
+        values({ photo: TEST_PNG_DATA_URL }),
+      ).photo,
+    ).toBe(TEST_PNG_DATA_URL);
+
+    const result = contactInputSchema.safeParse(
+      values({ photo: "data:image/svg+xml;base64,PHN2Zz4=" }),
+    );
+    expect(zodFieldErrors(result.error!).photo).toMatch(/JPEG, PNG, or WebP/);
+  });
+
+  it("rejects empty or mislabeled image content", () => {
+    const empty = contactInputSchema.safeParse(
+      values({ photo: "data:image/png;base64," }),
+    );
+    expect(zodFieldErrors(empty.error!).photo).toMatch(/base64 JPEG, PNG, or WebP/);
+
+    const mislabeled = contactInputSchema.safeParse(
+      values({ photo: "data:image/png;base64,AQID" }),
+    );
+    expect(zodFieldErrors(mislabeled.error!).photo).toMatch(/declared image type/);
   });
 });
 
