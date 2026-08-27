@@ -1,6 +1,5 @@
 import { z } from "zod";
-import type { ContactInput, ContactTextField } from "./types";
-import { photoDataUrlError } from "./photo";
+import type { ContactInput } from "./types";
 
 /**
  * Client/server-shared validation for the contact form.
@@ -53,14 +52,6 @@ export const contactInputSchema = z.object({
     .transform((value) => value || null)
     .nullable()
     .default(null),
-  photo: z
-    .string()
-    .superRefine((value, context) => {
-      const error = photoDataUrlError(value);
-      if (error) context.addIssue({ code: "custom", message: error });
-    })
-    .nullable()
-    .default(null),
 }) satisfies z.ZodType<ContactInput, unknown>;
 
 export type ContactFormValues = z.input<typeof contactInputSchema>;
@@ -84,7 +75,7 @@ export function zodFieldErrors(
 /* ------------------------------------------------------------------ */
 
 export interface ContactFieldSpec {
-  name: ContactTextField;
+  name: keyof ContactInput;
   label: string;
   type?: "text" | "email" | "tel" | "textarea";
   required?: boolean;
@@ -226,11 +217,11 @@ export const CONTACT_FIELDS: ContactFieldSpec[] = CONTACT_FIELD_GROUPS.flatMap(
 /** Pull the contact fields out of a submitted form, as raw strings. */
 export function formDataToValues(
   formData: FormData,
-): Record<ContactTextField, string> {
+): Record<keyof ContactInput, string> {
   return Object.fromEntries(
     CONTACT_FIELDS.map((field) => [
       field.name,
       String(formData.get(field.name) ?? ""),
     ]),
-  ) as Record<ContactTextField, string>;
+  ) as Record<keyof ContactInput, string>;
 }

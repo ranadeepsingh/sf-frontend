@@ -1,17 +1,16 @@
 "use client";
 
-import { useActionState, useState, type FormEvent } from "react";
+import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import { AlertCircle, Loader2 } from "lucide-react";
 import Field from "@/components/ui/Field";
 import Button, { buttonClasses } from "@/components/ui/Button";
-import ContactPhotoField from "./ContactPhotoField";
 import { CONTACT_FIELD_GROUPS } from "@/lib/contacts/schema";
 import {
   EMPTY_FORM_STATE,
   type Contact,
-  type ContactTextField,
+  type ContactInput,
   type FormState,
 } from "@/lib/contacts/types";
 
@@ -50,28 +49,13 @@ export default function ContactForm({
   cancelHref: string;
 }) {
   const [state, formAction] = useActionState(action, EMPTY_FORM_STATE);
-  const [photoError, setPhotoError] = useState<string | null>(null);
 
-  function valueFor(name: ContactTextField): string {
+  function valueFor(name: keyof ContactInput): string {
     return state.values?.[name] ?? contact?.[name] ?? "";
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    if (!photoError) return;
-    // Nothing else marks the submit as refused, so send focus to the invalid
-    // control; its `aria-describedby` carries the error to screen readers.
-    event.preventDefault();
-    const photoInput = event.currentTarget.elements.namedItem("photo_file");
-    if (photoInput instanceof HTMLElement) photoInput.focus();
-  }
-
   return (
-    <form
-      action={formAction}
-      onSubmit={handleSubmit}
-      noValidate
-      className="space-y-8"
-    >
+    <form action={formAction} noValidate className="space-y-8">
       {state.status === "error" && state.message ? (
         <div
           role="alert"
@@ -85,13 +69,6 @@ export default function ContactForm({
           <span>{state.message}</span>
         </div>
       ) : null}
-
-      <ContactPhotoField
-        contact={contact}
-        serverError={state.fieldErrors?.photo}
-        submitResult={state}
-        onClientErrorChange={setPhotoError}
-      />
 
       {CONTACT_FIELD_GROUPS.map((group) => (
         <fieldset key={group.title} className="space-y-4">
