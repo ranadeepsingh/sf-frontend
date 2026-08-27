@@ -78,12 +78,30 @@ export function apiUrl(path: string): string {
   return `${apiBaseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
+/**
+ * Bodies that carry their own `Content-Type`. `fetch` derives it from the body
+ * itself — and for `FormData` that header also carries the multipart boundary,
+ * so setting `application/json` here would corrupt every upload.
+ */
+function bodySetsOwnContentType(body: BodyInit): boolean {
+  return (
+    (typeof FormData !== "undefined" && body instanceof FormData) ||
+    (typeof Blob !== "undefined" && body instanceof Blob) ||
+    (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) ||
+    (typeof ReadableStream !== "undefined" && body instanceof ReadableStream)
+  );
+}
+
 export async function apiFetch(
   path: string,
   init?: RequestInit,
 ): Promise<Response> {
   const headers = new Headers(init?.headers);
-  if (init?.body && !headers.has("Content-Type")) {
+  if (
+    init?.body &&
+    !headers.has("Content-Type") &&
+    !bodySetsOwnContentType(init.body)
+  ) {
     headers.set("Content-Type", "application/json");
   }
   if (!headers.has("Accept")) {
