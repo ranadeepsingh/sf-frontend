@@ -57,7 +57,12 @@ export default function ContactForm({
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    if (photoError) event.preventDefault();
+    if (!photoError) return;
+    // Nothing else marks the submit as refused, so send focus to the invalid
+    // control; its `aria-describedby` carries the error to screen readers.
+    event.preventDefault();
+    const photoInput = event.currentTarget.elements.namedItem("photo_file");
+    if (photoInput instanceof HTMLElement) photoInput.focus();
   }
 
   return (
@@ -84,6 +89,7 @@ export default function ContactForm({
       <ContactPhotoField
         contact={contact}
         serverError={state.fieldErrors?.photo}
+        submitResult={state}
         onClientErrorChange={setPhotoError}
       />
 

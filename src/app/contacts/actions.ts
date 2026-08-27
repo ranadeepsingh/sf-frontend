@@ -8,6 +8,7 @@ import {
   apiErrorMessage,
   createContact,
   deleteContact,
+  getContact,
   replaceContact,
   toFieldErrors,
 } from "@/lib/contacts/api";
@@ -17,7 +18,11 @@ import {
   zodFieldErrors,
 } from "@/lib/contacts/schema";
 import { photoFileError } from "@/lib/contacts/photo";
-import type { Contact, FormState } from "@/lib/contacts/types";
+import type {
+  Contact,
+  ContactTextField,
+  FormState,
+} from "@/lib/contacts/types";
 
 /** Mutations for the contacts UI. Every one of these runs only on the server. */
 
@@ -29,23 +34,64 @@ function invalidate(contactId?: number) {
 const UNREACHABLE =
   "Could not reach the Contacts API. Check that the backend is running.";
 
+type FormValues = Record<ContactTextField, string>;
+
+/** Map an API failure onto form state; anything else is a real bug and rethrows. */
+function apiFailureState(
+  error: unknown,
+  values: FormValues,
+  fallback: string,
+): FormState {
+  if (error instanceof ApiUnreachableError) {
+    return { status: "error", message: UNREACHABLE, values };
+  }
+  if (error instanceof ApiError) {
+    if (error.status === 409) {
+      return {
+        status: "error",
+        message: "That email address is already taken.",
+        fieldErrors: {
+          email: apiErrorMessage(error, "This email is already in use."),
+        },
+        values,
+      };
+    }
+    if (error.status === 422) {
+      return {
+        status: "error",
+        message: "The API rejected these values.",
+        fieldErrors: toFieldErrors(error),
+        values,
+      };
+    }
+    return {
+      status: "error",
+      message: apiErrorMessage(error, fallback),
+      values,
+    };
+  }
+  throw error;
+}
+
 /**
  * Create (when `contactId` is null) or fully replace a contact.
  *
- * Bind the id and trusted existing photo at the call site so the form never
- * carries a mutable record id or has to post the original data URL back.
+ * Bind the id at the call site so the form never carries a mutable record id.
+ * An unchanged photo is read back from the API here rather than bound to the
+ * action: a bound data URL would be echoed into the page HTML and posted back
+ * on every submit.
  */
 export async function saveContactAction(
   contactId: number | null,
-  existingPhoto: string | null,
   _prevState: FormState,
   formData: FormData,
 ): Promise<FormState> {
   const values = formDataToValues(formData);
   const photoEntry = formData.get("photo_file");
   const photoFile = typeof photoEntry === "string" ? null : photoEntry;
-  const hasPhotoFile =
-    photoFile !== null && (photoFile.name !== "" || photoFile.size > 0);
+  // An untouched file input can arrive as an empty Blob that still has a name,
+  // so only the byte count tells a real upload from no upload at all.
+  const hasPhotoFile = photoFile !== null && photoFile.size > 0;
 
   let photo: string | null;
   if (hasPhotoFile) {
@@ -70,7 +116,24 @@ export async function saveContactAction(
         values,
       };
     }
-    photo = intent === "remove" ? null : existingPhoto;
+    if (intent === "remove" || contactId === null) {
+      photo = null;
+    } else {
+      let existing: Contact | null;
+      try {
+        existing = await getContact(contactId);
+      } catch (error) {
+        return apiFailureState(error, values, "The contact could not be saved.");
+      }
+      if (!existing) {
+        return {
+          status: "error",
+          message: "That contact no longer exists.",
+          values,
+        };
+      }
+      photo = existing.photo;
+    }
   }
 
   const parsed = contactInputSchema.safeParse({ ...values, photo });
@@ -90,35 +153,7 @@ export async function saveContactAction(
         ? await createContact(parsed.data)
         : await replaceContact(contactId, parsed.data);
   } catch (error) {
-    if (error instanceof ApiUnreachableError) {
-      return { status: "error", message: UNREACHABLE, values };
-    }
-    if (error instanceof ApiError) {
-      if (error.status === 409) {
-        return {
-          status: "error",
-          message: "That email address is already taken.",
-          fieldErrors: {
-            email: apiErrorMessage(error, "This email is already in use."),
-          },
-          values,
-        };
-      }
-      if (error.status === 422) {
-        return {
-          status: "error",
-          message: "The API rejected these values.",
-          fieldErrors: toFieldErrors(error),
-          values,
-        };
-      }
-      return {
-        status: "error",
-        message: apiErrorMessage(error, "The contact could not be saved."),
-        values,
-      };
-    }
-    throw error;
+    return apiFailureState(error, values, "The contact could not be saved.");
   }
 
   invalidate(saved.id);

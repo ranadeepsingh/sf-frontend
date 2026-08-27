@@ -60,6 +60,8 @@ describe("ContactForm", () => {
 
     await user.click(screen.getByRole("button", { name: /create contact/i }));
     expect(action).not.toHaveBeenCalled();
+    // The refusal is otherwise silent, so the invalid control takes focus.
+    expect(screen.getByLabelText(/contact photo/i)).toHaveFocus();
   });
 
   it("validates photo size before submission", async () => {
@@ -183,5 +185,50 @@ describe("ContactForm", () => {
       "href",
       "/contacts",
     );
+  });
+
+  it("stops claiming a replacement the failed submit threw away", async () => {
+    const action = jest.fn<Promise<FormState>, [FormState, FormData]>(
+      async () => ({
+        status: "error",
+        message: "That email address is already taken.",
+        fieldErrors: { email: "This email is already in use." },
+      }),
+    );
+    const contact = makeContact({ photo: TEST_PNG_DATA_URL });
+    const { container } = renderForm(action, contact);
+    const input = screen.getByLabelText<HTMLInputElement>(/contact photo/i);
+    const payload = TEST_PNG_DATA_URL.split(",")[1];
+
+    await userEvent.upload(
+      input,
+      new File([Buffer.from(payload, "base64")], "avatar.png", {
+        type: "image/png",
+      }),
+    );
+    await screen.findByText("Ready: avatar.png");
+
+    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(1));
+    expect(action.mock.calls[0][1].get("photo_intent")).toBe("replace");
+    await screen.findByText("This email is already in use.");
+
+    // React cleared the input on the way back, so the field must stop promising
+    // a file it can no longer send.
+    expect(input.files).toHaveLength(0);
+    expect(screen.queryByText(/^Ready:/)).toBeNull();
+    expect(screen.getByText(/choose it again/i)).toBeInTheDocument();
+    expect(container.querySelector("img")).toHaveAttribute(
+      "src",
+      TEST_PNG_DATA_URL,
+    );
+
+    // The retry keeps the saved photo instead of asking for a file that is gone.
+    await userEvent.click(screen.getByRole("button", { name: /create contact/i }));
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(2));
+    const retry = action.mock.calls[1][1];
+    expect(retry.get("photo_intent")).toBe("preserve");
+    const retryFile = retry.get("photo_file");
+    expect(retryFile instanceof File ? retryFile.size : 0).toBe(0);
   });
 });

@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { PHOTO_MAX_BYTES } from "./src/lib/contacts/photo";
+
+const SERVER_ACTION_UPLOAD_OVERHEAD_BYTES = 512 * 1024;
 
 function git(args: string): string | undefined {
   try {
@@ -43,10 +46,11 @@ const gitSha =
 // so it needs a Node runtime. `output: "export"` is deliberately not offered.
 const nextConfig: NextConfig = {
   trailingSlash: true,
-  // Allow a 2 MiB file plus multipart form overhead.
+  // One submit carries one photo file plus the multipart form fields. Existing
+  // photos are read from the API instead of being bound to the action.
   experimental: {
     serverActions: {
-      bodySizeLimit: "3mb",
+      bodySizeLimit: PHOTO_MAX_BYTES + SERVER_ACTION_UPLOAD_OVERHEAD_BYTES,
     },
   },
   // Hosts allowed to load dev-only resources (/_next/hmr, /_next/static…) when the

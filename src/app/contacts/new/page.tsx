@@ -29,7 +29,7 @@ export default function NewContactPage() {
       </div>
 
       <ContactForm
-        action={saveContactAction.bind(null, null, null)}
+        action={saveContactAction.bind(null, null)}
         submitLabel="Create contact"
         cancelHref="/contacts"
       />

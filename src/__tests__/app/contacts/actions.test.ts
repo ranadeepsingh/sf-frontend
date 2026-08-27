@@ -1,9 +1,10 @@
-import { ApiError } from "@/lib/apiClient";
+import { ApiError, ApiUnreachableError } from "@/lib/apiClient";
 import { makeContact, TEST_PNG_DATA_URL } from "../../mocks/handlers";
 import type { FormState } from "@/lib/contacts/types";
 
 const mockReplaceContact = jest.fn();
 const mockCreateContact = jest.fn();
+const mockGetContact = jest.fn();
 
 jest.mock("next/cache", () => ({ revalidatePath: jest.fn() }));
 jest.mock("next/navigation", () => ({
@@ -17,6 +18,7 @@ jest.mock("@/lib/contacts/api", () => {
     ...actual,
     createContact: (...args: unknown[]) => mockCreateContact(...args),
     replaceContact: (...args: unknown[]) => mockReplaceContact(...args),
+    getContact: (...args: unknown[]) => mockGetContact(...args),
   };
 });
 
@@ -37,6 +39,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockReplaceContact.mockResolvedValue(makeContact());
   mockCreateContact.mockResolvedValue(makeContact({ id: 99 }));
+  mockGetContact.mockResolvedValue(makeContact({ photo: EXISTING_PHOTO }));
 });
 
 describe("saveContactAction photo mapping", () => {
@@ -45,9 +48,11 @@ describe("saveContactAction photo mapping", () => {
     form.set("photo_intent", "preserve");
 
     await expect(
-      saveContactAction(1, EXISTING_PHOTO, IDLE, form),
+      saveContactAction(1, IDLE, form),
     ).rejects.toThrow("redirect:/contacts/1");
 
+    // The photo is read back from the API, never posted by the browser.
+    expect(mockGetContact).toHaveBeenCalledWith(1);
     const payload = mockReplaceContact.mock.calls[0][1];
     expect(payload.photo).toBe(EXISTING_PHOTO);
     expect(payload).toMatchObject({
@@ -56,6 +61,105 @@ describe("saveContactAction photo mapping", () => {
       email: "ada@example.com",
       phone: null,
     });
+  });
+
+  it("treats an empty file entry as no upload even when it is named", async () => {
+    const form = validForm();
+    form.set("photo_intent", "preserve");
+    // Next's fetch-action parser can hand back the untouched input like this.
+    form.set(
+      "photo_file",
+      new Blob([], { type: "application/octet-stream" }),
+      "blob",
+    );
+
+    await expect(
+      saveContactAction(1, IDLE, form),
+    ).rejects.toThrow("redirect:/contacts/1");
+
+    expect(mockReplaceContact.mock.calls[0][1].photo).toBe(EXISTING_PHOTO);
+  });
+
+  it("creates without a photo when the empty file entry is named", async () => {
+    const form = validForm();
+    form.set("photo_intent", "remove");
+    form.set(
+      "photo_file",
+      new Blob([], { type: "application/octet-stream" }),
+      "blob",
+    );
+
+    await expect(
+      saveContactAction(null, IDLE, form),
+    ).rejects.toThrow("redirect:/contacts/99");
+
+    expect(mockCreateContact.mock.calls[0][0]).toMatchObject({ photo: null });
+    expect(mockGetContact).not.toHaveBeenCalled();
+  });
+
+  it("reports a contact that vanished before an unchanged photo was read", async () => {
+    mockGetContact.mockResolvedValue(null);
+    const form = validForm();
+    form.set("photo_intent", "preserve");
+
+    await expect(saveContactAction(1, IDLE, form)).resolves.toMatchObject({
+      status: "error",
+      message: "That contact no longer exists.",
+      values: { first_name: "Ada" },
+    });
+    expect(mockReplaceContact).not.toHaveBeenCalled();
+  });
+
+  it("reports an unreachable API while reading an unchanged photo", async () => {
+    mockGetContact.mockRejectedValue(
+      new ApiUnreachableError("http://api.test/api/v1/contacts/1", undefined),
+    );
+    const form = validForm();
+    form.set("photo_intent", "preserve");
+
+    await expect(saveContactAction(1, IDLE, form)).resolves.toMatchObject({
+      status: "error",
+      message:
+        "Could not reach the Contacts API. Check that the backend is running.",
+    });
+    expect(mockReplaceContact).not.toHaveBeenCalled();
+  });
+
+  it("reports an API failure while reading an unchanged photo", async () => {
+    mockGetContact.mockRejectedValue(
+      new ApiError(500, JSON.stringify({ detail: "Database is down." })),
+    );
+    const form = validForm();
+    form.set("photo_intent", "preserve");
+
+    await expect(saveContactAction(1, IDLE, form)).resolves.toMatchObject({
+      status: "error",
+      message: "Database is down.",
+    });
+    expect(mockReplaceContact).not.toHaveBeenCalled();
+  });
+
+  it("skips the lookup when the photo is being replaced", async () => {
+    const form = validForm();
+    form.set("photo_intent", "replace");
+    form.set(
+      "photo_file",
+      new Blob(
+        [
+          new Uint8Array([
+            0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50,
+          ]),
+        ],
+        { type: "image/webp" },
+      ),
+      "avatar.webp",
+    );
+
+    await expect(
+      saveContactAction(1, IDLE, form),
+    ).rejects.toThrow("redirect:/contacts/1");
+
+    expect(mockGetContact).not.toHaveBeenCalled();
   });
 
   it("converts a validated replacement File to a data URL", async () => {
@@ -74,7 +178,7 @@ describe("saveContactAction photo mapping", () => {
     );
 
     await expect(
-      saveContactAction(1, EXISTING_PHOTO, IDLE, form),
+      saveContactAction(1, IDLE, form),
     ).rejects.toThrow("redirect:/contacts/1");
 
     expect(mockReplaceContact.mock.calls[0][1]).toMatchObject({
@@ -87,7 +191,7 @@ describe("saveContactAction photo mapping", () => {
     form.set("photo_intent", "remove");
 
     await expect(
-      saveContactAction(1, EXISTING_PHOTO, IDLE, form),
+      saveContactAction(1, IDLE, form),
     ).rejects.toThrow("redirect:/contacts/1");
 
     expect(mockReplaceContact.mock.calls[0][1]).toMatchObject({ photo: null });
@@ -102,7 +206,7 @@ describe("saveContactAction photo mapping", () => {
     );
 
     await expect(
-      saveContactAction(null, null, IDLE, form),
+      saveContactAction(null, IDLE, form),
     ).resolves.toMatchObject({
       status: "error",
       fieldErrors: { photo: "Choose a JPEG, PNG, or WebP image." },
@@ -122,7 +226,7 @@ describe("saveContactAction photo mapping", () => {
     const form = validForm();
 
     await expect(
-      saveContactAction(1, EXISTING_PHOTO, IDLE, form),
+      saveContactAction(1, IDLE, form),
     ).resolves.toMatchObject({
       message: "The API rejected these values.",
       fieldErrors: { photo: "Photo content is invalid." },

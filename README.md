@@ -137,12 +137,19 @@ e2e/                      Playwright specs (run against the real API)
   oversized files are rejected before the API call.
 - Photos are encoded as data URLs by the server action and stored in the API's
   in-memory database. The edit action explicitly carries an unchanged photo
-  through the full-replacement `PUT`; **Remove photo** intentionally sends
-  `null`.
+  through the full-replacement `PUT`. It reads the stored photo back by id
+  rather than binding it to the action, so the data URL is never echoed into the
+  page or posted again. **Remove photo** intentionally sends `null`.
 - `ContactAvatar` renders photos in the list, detail page, and form preview. A
   missing or unreadable image falls back to initials.
-- Next Server Actions accept up to 3 MB. The app rejects image files larger
-  than 2 MiB.
+- A submit carries at most one photo as multipart binary. The Server Action
+  limit allows a 2 MiB file plus 512 KiB for text fields and multipart
+  boundaries. The browser and server reject larger image files.
+- A rejected file leaves the saved photo untouched and can be dropped with
+  **Discard selection**. A blocked submit moves focus to the photo input so the
+  reason is announced. React empties the file input when an action returns. If
+  the submit fails, the preview resets and asks the user to choose the file
+  again.
 
 ## Conventions
 
