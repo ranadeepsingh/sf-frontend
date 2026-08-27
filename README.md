@@ -1,5 +1,7 @@
 # sf-frontend
 
+> Qodo review setup check for the meetup challenge.
+
 Front end for the [Contacts API](http://127.0.0.1:8000/docs) — browse, search, sort,
 page through, create, edit, and delete contacts.
 
